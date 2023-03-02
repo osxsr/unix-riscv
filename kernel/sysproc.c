@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -97,4 +98,19 @@ sys_trace(void)
 {
   argint(0, &(myproc()->mask));
   return 0;
+}
+
+uint64
+sys_sysinfo(void)
+{
+  struct sysinfo a;
+  int addr;
+  a.freemem = freemem();
+  a.nproc   = unusednum();
+  argint(0, &addr);
+  if(addr == 0) {
+    //printf("addr is null!\n");
+    return -1;
+  }
+  return copyout(myproc()->pagetable, addr, (char *)&a, sizeof(struct sysinfo));
 }
