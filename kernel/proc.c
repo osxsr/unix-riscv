@@ -298,6 +298,9 @@ fork(void)
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
+  
+  // copy trace mask from parent to child.
+  np->mask = p->mask;
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
@@ -322,6 +325,7 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  //printf("child pid %d\n", pid);
   return pid;
 }
 
