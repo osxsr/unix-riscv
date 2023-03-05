@@ -122,6 +122,9 @@ walkaddr(pagetable_t pagetable, uint64 va)
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
+  //printf("%p -> ",*pte);
+  *pte = *pte | PTE_A;
+  //printf("%p\n",*pte);
   return pa;
 }
 
@@ -377,7 +380,7 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
-
+  //printf("copy from user to kernel @ %p,len = %d\n",srcva, len);
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
@@ -440,7 +443,6 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 void walk_print(pagetable_t pagetable, int depth)
 {
-
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
     if((pte & PTE_V)){

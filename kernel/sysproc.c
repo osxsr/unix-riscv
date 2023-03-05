@@ -69,12 +69,37 @@ sys_sleep(void)
   return 0;
 }
 
-
+//#define LAB_PGTBL
 #ifdef LAB_PGTBL
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+  int bitmap=0;
+  int vaddr;
+  int npage, uaddr;
+  argint(0, &vaddr);
+  argint(1, &npage);
+  argint(2, &uaddr);
+  if(npage > 32)
+    panic("pgaccess : once only for 32 pages\n");
+
+
+  pte_t *pte;
+  pagetable_t pg = myproc()->pagetable;
+  for(int i=0; i<npage; i++) {
+    if((pte = walk(pg, vaddr+i*PGSIZE, 0)) == 0) {
+      panic("pgaccess : page not found\n");
+      return -1;
+    }
+    if(*pte & PTE_A) {
+      bitmap |= 1<<i;
+      *pte = *pte & (~PTE_A);
+    }
+  }
+  //vmprint(myproc()->pagetable);
+  //printf("\n\n\n\n");
+
+  copyout(myproc()->pagetable, uaddr, (char *)&bitmap, 4);
   return 0;
 }
 #endif
