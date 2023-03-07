@@ -78,8 +78,11 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
+  {
+    if(p->sig_inteval && p->alarm_lock)
+      p->alarm_count++;
     yield();
-
+  }
   usertrapret();
 }
 
@@ -90,6 +93,7 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
+
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
@@ -118,6 +122,16 @@ usertrapret(void)
 
   // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
+
+  // alarm and goto handler
+  if(p->sig_inteval) {
+    if(p->alarm_lock && p->alarm_count >= p->sig_inteval) {
+      p->alarm_lock = 0;
+      p->old_frame = kalloc();
+      memmove(p->old_frame, p->trapframe, sizeof(struct trapframe));
+      w_sepc((uint64)p->handler);
+    }
+  }
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);

@@ -48,6 +48,7 @@ test0()
   int i;
   printf("test0 start\n");
   count = 0;
+  //printf("intest.c:%p\n",periodic);
   sigalarm(2, periodic);
   for(i = 0; i < 1000*500000; i++){
     if((i % 1000000) == 0)
@@ -91,6 +92,7 @@ test1()
   for(i = 0; i < 500000000; i++){
     if(count >= 10)
       break;
+    
     foo(i, &j);
   }
   if(count < 10){
@@ -124,7 +126,9 @@ test2()
   }
   if (pid == 0) {
     count = 0;
+    printf("test2:1");
     sigalarm(2, slow_handler);
+    printf("test2:2");
     for(i = 0; i < 1000*500000; i++){
       if((i % 1000000) == 0)
         write(2, ".", 1);
