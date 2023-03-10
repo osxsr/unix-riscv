@@ -67,7 +67,13 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15){
+    // page fault : write 
+    //printf("before copy_page pc=%p stval=%p\n", p->trapframe->epc, r_stval());
+    if(copy_page(p->pagetable, PGROUNDDOWN(r_stval())) < 0)
+      goto tp_err;
   } else {
+tp_err:
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     setkilled(p);
@@ -219,3 +225,47 @@ devintr()
   }
 }
 
+uint64 copy_page(pagetable_t pagetable, uint64 vaddr) {
+  pte_t *pte;
+  uint64 pa;
+  uint flags;
+  char *mem;
+  if((pte = walk(pagetable, vaddr, 0)) == 0) {
+    printf("cow: try to access page doesn't exist\n");
+    return -1;
+  }
+  if(*pte & PTE_WB) {
+    pa = PTE2PA(*pte);
+
+    // if only one process refer this page ,just change mode
+    if(get_ref_count(pa) == 1) {
+      *pte = *pte | PTE_W;
+      return pa;
+    }
+    else {
+      /* get ready for new physical page, old phy-addr, flags */
+      if((mem = kalloc()) == 0){
+        panic("cow: have no enough pages\n");
+      }
+      *pte = *pte | PTE_W;
+      flags = PTE_FLAGS(*pte);
+
+      /* move to new page */
+      memmove(mem, (char*)pa, PGSIZE);
+
+      /* deference of old page */
+      sub_ref_count(pa);
+      *pte = 0;
+
+      /* map new page table */
+      if(mappages(pagetable, vaddr, PGSIZE, (uint64)mem, flags) != 0){
+        kfree(mem);
+        panic("cow: map err!\n");
+      }
+    }
+  } else {
+    printf("cow: this page is always read only, killed\n");
+    return -1;
+  }
+  return (uint64)mem;
+}

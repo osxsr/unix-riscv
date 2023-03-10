@@ -437,7 +437,7 @@ sys_exec(void)
   char path[MAXPATH], *argv[MAXARG];
   int i;
   uint64 uargv, uarg;
-
+  printf("sys_exec start/n");
   argaddr(1, &uargv);
   if(argstr(0, path, MAXPATH) < 0) {
     return -1;
@@ -460,17 +460,21 @@ sys_exec(void)
     if(fetchstr(uarg, argv[i], PGSIZE) < 0)
       goto bad;
   }
-
   int ret = exec(path, argv);
 
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
+  {
+    sub_ref_count((uint64)argv[i]);
     kfree(argv[i]);
-
+  }
   return ret;
 
  bad:
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
+  {
+    sub_ref_count((uint64)argv[i]);
     kfree(argv[i]);
+  }
   return -1;
 }
 

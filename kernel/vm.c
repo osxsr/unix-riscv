@@ -156,6 +156,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    //if(size<15*PGSIZE)
+    //  printf("map pa:%p r=%d w=%d\n",pa, *pte&PTE_R, *pte&PTE_W);
     if(a == last)
       break;
     a += PGSIZE;
@@ -185,6 +187,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
+      sub_ref_count(pa);
       kfree((void*)pa);
     }
     *pte = 0;
@@ -239,7 +242,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       return 0;
     }
     memset(mem, 0, PGSIZE);
+    //printf("unmalloc va=%p pa=%p r=%d w=%d wb=%d\n", a, mem, 1, xperm & PTE_W, xperm & PTE_WB);
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
+      sub_ref_count((uint64)mem);
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
@@ -283,6 +288,7 @@ freewalk(pagetable_t pagetable)
       panic("freewalk: leaf");
     }
   }
+  sub_ref_count((uint64)pagetable);
   kfree((void*)pagetable);
 }
 
@@ -308,7 +314,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -316,12 +321,17 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    //printf("multi map %p vadd=%p r=%d w=%d\n", pa, i, *pte&PTE_R, *pte&PTE_W);
+    add_ref_count(pa);
+    /* clear the PTE_W for both parent and child */
+    if(*pte & PTE_W)
+      *pte = *pte | PTE_WB;
+    *pte = *pte & ~PTE_W;
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    /* just map new PTE to the old physical address--pa */
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      printf("uvmcopy err!\n");
       goto err;
     }
   }
@@ -352,12 +362,23 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    pte_t *pte;
+    if((pte = walk(pagetable, va0, 0)) == 0) {
+      printf("copy out failed to get pte\n");
+      return -1;
+    }
+    //printf("cpout: va=%p pa=%p\n", va0, PTE2PA(*pte));
+    if(!(*pte & PTE_W) && (*pte & PTE_WB)){
+      //printf("used cp_pg pa=%p\n",pa0);
+      if((pa0 = copy_page(pagetable, va0)) < 0)
+        panic("copy out failed\n");
+    }
+  
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;

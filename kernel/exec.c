@@ -16,12 +16,15 @@ int flags2perm(int flags)
       perm = PTE_X;
     if(flags & 0x2)
       perm |= PTE_W;
+    if (flags & PTE_WB)
+      perm |= PTE_WB;
     return perm;
 }
 
 int
 exec(char *path, char **argv)
 {
+  printf("\n\nexec: %s\n\n",path);
   char *s, *last;
   int i, off;
   uint64 argc, sz = 0, sp, ustack[MAXARG], stackbase;
@@ -49,6 +52,7 @@ exec(char *path, char **argv)
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
 
+  printf("load start:\n");
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
@@ -68,6 +72,7 @@ exec(char *path, char **argv)
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
       goto bad;
   }
+  printf("load end:\n");
   iunlockput(ip);
   end_op();
   ip = 0;
@@ -84,10 +89,13 @@ exec(char *path, char **argv)
     goto bad;
   sz = sz1;
   uvmclear(pagetable, sz-2*PGSIZE);
+  printf("user stack guard = %p\n",sz-2*PGSIZE);
   sp = sz;
   stackbase = sp - PGSIZE;
+  printf("stack sp=%p base=%p\n", sp, stackbase);
 
   // Push argument strings, prepare rest of stack in ustack.
+  printf("argv string push \n");
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
       goto bad;
@@ -100,6 +108,7 @@ exec(char *path, char **argv)
     ustack[argc] = sp;
   }
   ustack[argc] = 0;
+  printf("argv string push end\n");
 
   // push the array of argv[] pointers.
   sp -= (argc+1) * sizeof(uint64);

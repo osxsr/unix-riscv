@@ -23,11 +23,36 @@ struct {
   struct run *freelist;
 } kmem;
 
+uint64 npage, used;
+char *ref_array;
+
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+
+  /* build ref_array */
+  uint64 array_pg_cnt = npage * sizeof(char) / PGSIZE + (npage * sizeof(char) % PGSIZE > 0);
+  printf("pages:%d", npage);
+  struct run *r, *rn;
+  /* allocate for sequential array at one time */
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  while(array_pg_cnt){
+    if(r){
+      rn = r->next;
+      memset((void *)r, 0, PGSIZE);
+      ref_array = (char *)r;
+      r = rn;
+    }
+    else
+      printf("ref array: page not enough\n");
+    array_pg_cnt--;
+  }
+  kmem.freelist = r;
+  release(&kmem.lock);
 }
 
 void
@@ -35,8 +60,11 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  npage = 0;
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
+    npage++;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,7 +78,11 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
-
+  if(ref_array && ref_array[((uint64)pa>>12) - ((uint64)end>>12)]>0)
+  {
+    //printf("refused pa=%p . but proceed : %d\n", (uint64)pa, ref_array[((uint64)pa>>12) - ((uint64)end>>12)]);
+    return;
+  }
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
@@ -76,7 +108,36 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    ref_array[((uint64)r>>12) - ((uint64)end>>12)] = 1;
+  }
   return (void*)r;
+}
+
+int add_ref_count(uint64 pa) {
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    printf("add: addr not correct: %p\n", pa);
+  else
+    ref_array[(pa>>12) - ((uint64)end>>12)]++;
+  return 0;
+}
+
+int sub_ref_count(uint64 pa) {
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    printf("sub: addr not correct: %p\n", pa);
+  else{
+    //printf("pa: %p   %d -> %d\n",pa, ref_array[(pa>>12) - ((uint64)end>>12)],ref_array[(pa>>12) - ((uint64)end>>12)]-1);//
+    ref_array[(pa>>12) - ((uint64)end>>12)]--;
+  }
+  return 0;
+}
+
+int get_ref_count(uint64 pa) {
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    printf("get: addr not correct: %p\n", pa);
+  else{
+    return ref_array[(pa>>12) - ((uint64)end>>12)];
+  }
+  return -1;
 }

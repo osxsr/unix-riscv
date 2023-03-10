@@ -26,13 +26,13 @@ simpletest()
   for(char *q = p; q < p + sz; q += 4096){
     *(int*)q = getpid();
   }
-
+  printf("fork start\n");
   int pid = fork();
   if(pid < 0){
     printf("fork() failed\n");
     exit(-1);
   }
-
+  printf("fork end\n");
   if(pid == 0)
     exit(0);
 
